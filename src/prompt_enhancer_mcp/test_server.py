@@ -333,22 +333,36 @@ async def get_test_prompt(page_selection: str, ctx: Context, project_id: str = N
         _set_workflow(project_id, state)
         logger.info("Workflow state updated: session=%s, page=%s", session_id, page_title)
 
+        # ── Build the response with the enhanced prompt front-and-center ──
+        # The prompt itself IS the primary output. Instructions to the AI
+        # are embedded so it displays the prompt verbatim and follows the
+        # step-wise workflow.
         return (
-            f"SESSION_ID: {session_id}\n"
-            f"PAGE: {page_title}\n"
-            f"SCENARIOS: {len(scenarios)}\n\n"
-            f"--- PROMPT START ---\n"
+            f"SESSION: {session_id} | PAGE: {page_title} | SCENARIOS: {len(scenarios)}\n\n"
+            f"===================================================================\n"
+            f"MANDATORY: You MUST output the ENTIRE prompt below to the user\n"
+            f"in a single fenced code block (```). Do NOT summarize, paraphrase,\n"
+            f"extract into tables, or abbreviate ANY part of it. The user needs\n"
+            f"to review the full prompt exactly as written.\n"
+            f"===================================================================\n\n"
+            f"```\n"
             f"{prompt}\n"
-            f"--- PROMPT END ---\n\n"
-            f"INSTRUCTIONS:\n"
-            f"1. Use the prompt above to generate Gherkin .feature files.\n"
-            f"   Follow ALL instructions in the prompt (tags, format, coverage summary, etc.)\n"
-            f"2. AFTER generating, DISPLAY the complete Gherkin output to the user in chat.\n"
-            f"   Do NOT auto-submit. The user must review the output first.\n"
-            f"3. Ask the user if they want to submit the test cases.\n"
-            f"4. ONLY if the user confirms (e.g. says 'submit', 'yes', 'send it', 'push'), call:\n"
-            f"   submit_test_cases(gherkin=\"<the generated output>\")\n"
-            f"   The session_id is stored on the server — you do NOT need to pass it.\n"
+            f"```\n\n"
+            f"===================================================================\n"
+            f"AFTER displaying the prompt above, follow these rules:\n"
+            f"===================================================================\n"
+            f"1. ASK the user if they want to proceed with test case generation.\n"
+            f"   Do NOT start generating yet.\n"
+            f"2. ONLY if the user confirms (e.g. 'proceed', 'yes', 'generate'),\n"
+            f"   use the prompt above to generate Gherkin .feature files.\n"
+            f"   Follow ALL instructions in the prompt (tags, format, coverage\n"
+            f"   summary, code-first approach, etc.)\n"
+            f"3. AFTER generating, DISPLAY the complete Gherkin output to the\n"
+            f"   user in chat. Do NOT auto-submit.\n"
+            f"4. ASK the user if they want to submit the test cases.\n"
+            f"5. ONLY if the user confirms (e.g. 'submit', 'send it', 'push'),\n"
+            f"   call submit_test_cases(gherkin=\"<the generated output>\").\n"
+            f"   The session_id is stored on the server — do NOT pass it.\n"
             f"   Do NOT call submit_test_cases without explicit user confirmation."
         )
     except Exception as e:
