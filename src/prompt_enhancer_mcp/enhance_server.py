@@ -1,8 +1,12 @@
 import logging
+import warnings
 import httpx
 from contextlib import asynccontextmanager
 from mcp.server.fastmcp import FastMCP, Context
 from .config import get_config, validate_config, get_client
+
+# Suppress SSL warnings for internal corporate backends with self-signed certs
+warnings.filterwarnings("ignore", message="Unverified HTTPS request")
 
 logger = logging.getLogger("mcp.enhance-prompt")
 
@@ -12,7 +16,7 @@ logger = logging.getLogger("mcp.enhance-prompt")
 @asynccontextmanager
 async def lifespan(app):
     """Create a shared httpx client that lives for the entire server lifetime."""
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    async with httpx.AsyncClient(timeout=60.0, verify=False) as client:
         logger.info("Enhance server: HTTP client created")
         yield {"client": client}
     logger.info("Enhance server: HTTP client closed")
@@ -56,7 +60,7 @@ async def enhance(task: str, project_id: str = None) -> str:
     logger.info("Enhancing task: %s (Project: %s)", task, project_id)
 
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=60.0, verify=False) as client:
             result = await _call_enhance(client, api_url, api_key, project_id, task)
     except Exception as e:
         logger.exception("Exception during enhance")
