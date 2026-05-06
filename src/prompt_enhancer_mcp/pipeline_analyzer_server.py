@@ -96,16 +96,15 @@ async def _call_rag(
     query: str,
     limit: int = 5,
 ) -> dict | str:
-    """POST {API_URL}/api/orchestration/query-internal — returns parsed JSON or error string."""
+    """POST {API_URL}/api/orchestration/pipeline-rag-internal — returns parsed JSON or error string."""
     try:
         resp = await client.post(
-            f"{api_url}/api/orchestration/query-internal",
+            f"{api_url}/api/orchestration/pipeline-rag-internal",
             headers={"X-API-Key": api_key},
             json={
                 "project_id": project_id,
                 "query": query,
                 "max_chunks": limit,
-                "return_prompt": True,
             },
             timeout=60.0,
         )

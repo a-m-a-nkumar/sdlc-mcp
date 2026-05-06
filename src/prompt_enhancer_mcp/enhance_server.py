@@ -32,13 +32,12 @@ async def _call_enhance(client: httpx.AsyncClient, api_url: str, api_key: str,
                         frontend_requirements: str = "", backend_requirements: str = "") -> str:
     """Call the backend query-internal endpoint and return the enhanced prompt."""
     resp = await client.post(
-        f"{api_url}/api/orchestration/query-internal",
+        f"{api_url}/api/orchestration/enhance-prompt-internal",
         headers={"X-API-Key": api_key},
         json={
             "project_id": project_id,
             "query": task,
             "max_chunks": 5,
-            "return_prompt": True,
             "frontend_requirements": frontend_requirements,
             "backend_requirements": backend_requirements,
         },
