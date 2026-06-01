@@ -249,8 +249,21 @@ async def list_test_scenario_pages(ctx: Context, project_id: str = None, filter:
         lines = [f"Found {len(pages)} test scenario page(s):\n"]
         for i, p in enumerate(pages):
             lines.append(f"  {i + 1}. Page ID: {p['id']}  |  Title: {p['title']}")
-        lines.append(f"\nNext: call get_test_prompt(page_selection=\"<title or number>\") to pick a page.")
-        lines.append(f"If you lose this data later, call get_workflow_status() to retrieve it.")
+        lines.append("")
+        lines.append("=" * 67)
+        lines.append("MANDATORY: Display the numbered list above to the user verbatim,")
+        lines.append("then ASK them which page to use. Do NOT pick on the user's")
+        lines.append("behalf. Even if exactly one title looks like an obvious match,")
+        lines.append("you MUST wait for the user's explicit selection (page number,")
+        lines.append("partial title, or page ID).")
+        lines.append("")
+        lines.append("ONLY after the user explicitly picks one (e.g. 'page 3', 'the")
+        lines.append("payment one', '8485208135'), call:")
+        lines.append("    get_test_prompt(page_selection=\"<their pick>\")")
+        lines.append("")
+        lines.append("Do not call get_test_prompt without explicit user selection.")
+        lines.append("=" * 67)
+        lines.append("If you lose this data later, call get_workflow_status() to retrieve it.")
         return "\n".join(lines)
     except Exception as e:
         logger.exception("Exception during list_test_scenario_pages")
