@@ -1,12 +1,13 @@
 # brd-enhancer-mcp
 
-A package that ships three MCP servers for an AI-assisted SDLC workflow:
+A package that ships four MCP servers for an AI-assisted SDLC workflow:
 
 | Server | Executable | Purpose |
 |---|---|---|
 | enhance-prompt | `prompt-enhancer-mcp` | Enhance dev tasks with project documentation context |
 | test-workflow | `test-workflow-mcp` | Generate & submit Gherkin test cases from Confluence |
 | pipeline-analyzer | `pipeline-analyzer-mcp` | Analyze Harness pipeline failures with RAG context from past incidents |
+| code-documentation | `code-documentation-mcp` | Generate Markdown code documentation and publish it to Confluence |
 
 ---
 
@@ -138,7 +139,7 @@ Use the full path you got from the command above.
 
 ## Environment Variables
 
-### Shared (all servers)
+### Shared (all servers — only three vars total)
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
@@ -146,32 +147,56 @@ Use the full path you got from the command above.
 | `PROJECT_ID` | ✅ Yes | — | Your project ID/GUID |
 | `API_URL` | ❌ No | `http://localhost:8000` | Backend URL |
 
-### pipeline-analyzer-mcp only
+### enhance-prompt only (optional tech-stack hints)
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `HARNESS_API_KEY` | ✅ Yes | — | Harness personal access token (`pat.ACCOUNT.TOKEN_ID.SECRET`) |
-| `HARNESS_ACCOUNT_ID` | ✅ Yes | — | Harness account identifier |
-| `HARNESS_PROJECT_ID` | ✅ Yes | — | Harness project identifier |
-| `HARNESS_ORG_ID` | ❌ No | `default` | Harness organization identifier |
-| `HARNESS_BASE_URL` | ❌ No | `https://app.harness.io` | Harness base URL (change for self-hosted) |
+| `FRONTEND_REQUIREMENTS` | ❌ No | — | e.g. `react18` — appended to the enhanced prompt |
+| `BACKEND_REQUIREMENTS` | ❌ No | — | e.g. `redis,postgresql,express` — appended to the enhanced prompt |
 
-### pipeline-analyzer example config
+### pipeline-analyzer — no Harness env vars needed
+
+The pipeline-analyzer used to require five `HARNESS_*` env vars. It no longer does — the backend resolves your stored Harness credentials by project owner. Link Harness once in **Settings → Harness** on the SDLC frontend; the MCP picks it up automatically (cached 5 min, so changes propagate within ~5 minutes without a restart).
+
+### code-documentation — uses the project owner's Atlassian credentials
+
+No Confluence env vars needed. The backend uses the project owner's stored Atlassian credentials and the project's linked Confluence space to publish documentation pages.
+
+### Same config shape for all four servers
 
 ```json
 {
     "mcpServers": {
+        "enhance-prompt": {
+            "command": "prompt-enhancer-mcp",
+            "env": {
+                "PROJECT_ID": "your_project_id",
+                "API_KEY":    "your_backend_api_key",
+                "API_URL":    "https://your-backend.com"
+            }
+        },
+        "test-workflow": {
+            "command": "test-workflow-mcp",
+            "env": {
+                "PROJECT_ID": "your_project_id",
+                "API_KEY":    "your_backend_api_key",
+                "API_URL":    "https://your-backend.com"
+            }
+        },
         "pipeline-analyzer": {
             "command": "pipeline-analyzer-mcp",
             "env": {
-                "API_URL": "https://your-backend.com",
-                "API_KEY": "your_backend_api_key",
                 "PROJECT_ID": "your_project_id",
-                "HARNESS_API_KEY": "pat.ACCOUNT.TOKEN_ID.SECRET",
-                "HARNESS_ACCOUNT_ID": "your_harness_account_id",
-                "HARNESS_ORG_ID": "default",
-                "HARNESS_PROJECT_ID": "your_harness_project_id",
-                "HARNESS_BASE_URL": "https://app.harness.io"
+                "API_KEY":    "your_backend_api_key",
+                "API_URL":    "https://your-backend.com"
+            }
+        },
+        "code-documentation": {
+            "command": "code-documentation-mcp",
+            "env": {
+                "PROJECT_ID": "your_project_id",
+                "API_KEY":    "your_backend_api_key",
+                "API_URL":    "https://your-backend.com"
             }
         }
     }

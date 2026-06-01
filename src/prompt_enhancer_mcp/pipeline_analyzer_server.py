@@ -8,7 +8,7 @@ from .config import (
     get_config,
     validate_config,
     get_client,
-    get_harness_config,
+    fetch_harness_config,
     validate_harness_config,
 )
 from . import harness_client as hc
@@ -146,11 +146,15 @@ async def list_recent_failures(ctx: Context, limit: int = 10) -> str:
     Args:
         limit: Max number of failed executions to return (default 10).
     """
-    harness_cfg = get_harness_config()
-    if err := validate_harness_config(harness_cfg):
+    project_id, api_url, api_key = get_config()
+    if err := validate_config(project_id, api_key):
         return err
 
     client = get_client(ctx)
+    harness_cfg = await fetch_harness_config(client, api_url, api_key, project_id)
+    if err := validate_harness_config(harness_cfg):
+        return err
+
     result = await hc.list_recent_executions(client, harness_cfg, status_filter="Failed", limit=limit)
 
     if isinstance(result, str):
@@ -184,13 +188,13 @@ async def _build_analysis(
     include_rag: bool,
 ) -> str:
     """Core analysis logic — called by the tool and reused by document_resolved_incident."""
-    harness_cfg = get_harness_config()
-    if err := validate_harness_config(harness_cfg):
+    project_id, api_url, api_key = get_config()
+    if err := validate_config(project_id, api_key):
         return err
 
-    project_id, api_url, api_key = get_config()
-    if include_rag and (err := validate_config(project_id, api_key)):
-        return "Error: PROJECT_ID and API_KEY must be set for RAG search (include_rag=False to skip)."
+    harness_cfg = await fetch_harness_config(client, api_url, api_key, project_id)
+    if err := validate_harness_config(harness_cfg):
+        return err
 
     details = await hc.get_execution_details(client, harness_cfg, exec_id)
     if isinstance(details, str):
