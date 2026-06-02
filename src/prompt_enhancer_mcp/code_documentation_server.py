@@ -29,7 +29,7 @@ mcp = FastMCP("code-documentation", lifespan=lifespan)
 @mcp.tool()
 async def prepare_code_documentation(
     ctx: Context,
-    scope: str = "whole repository",
+    scope: str = "",
     project_id: str = None,
 ) -> str:
     """
@@ -39,28 +39,56 @@ async def prepare_code_documentation(
     this codebase and publish it".
 
     Returns a structured workflow prompt that the IDE AI must follow:
-    explore the repo, generate Markdown, show it to the user, get
-    explicit approval, then call push_code_documentation.
+    detect the repo, explore the codebase, generate Markdown, show it
+    to the user, get explicit approval, then call push_code_documentation.
 
     Args:
-        scope: What to document (e.g. "whole repository", "src/api module",
-               "authentication flow"). Becomes part of the Confluence page title.
+        scope: What to document. If empty, the IDE AI MUST detect the
+               repository name from the user's workspace and use it as
+               the scope (so different repos get distinct page titles).
+               Pass a specific subpath only if the user asked to document
+               a module or sub-tree (e.g. "src/api", "auth flow").
         project_id: Optional project ID. Defaults to PROJECT_ID env var.
     """
     project_id, _, api_key = get_config(project_id)
     if err := validate_config(project_id, api_key):
         return err
 
-    logger.info("Preparing code documentation workflow (scope=%s, project=%s)", scope, project_id)
+    scope_hint = scope if scope else "<detect from repo root in Step 0>"
+    logger.info("Preparing code documentation workflow (scope=%s, project=%s)", scope_hint, project_id)
 
     return (
         f"CODE DOCUMENTATION TASK\n"
-        f"Scope: {scope}\n"
+        f"Scope (requested): {scope_hint}\n"
         f"Project: {project_id}\n\n"
         f"===================================================================\n"
         f"MANDATORY workflow — follow these steps in order. Do NOT skip or\n"
-        f"reorder. Do NOT call push_code_documentation until Step 4.\n"
+        f"reorder. Do NOT call push_code_documentation until Step 5.\n"
         f"===================================================================\n\n"
+        f"STEP 0 — IDENTIFY THE REPO (resolve `scope` and `commit_sha` NOW)\n"
+        f"  These values become part of the Confluence page title, so getting\n"
+        f"  them right is what keeps different repos / different commits from\n"
+        f"  colliding on the same page.\n"
+        f"\n"
+        f"  a) Repository name (`scope`):\n"
+        f"     - From the user's project root, run:\n"
+        f"         git rev-parse --show-toplevel\n"
+        f"       and take the basename of the result.\n"
+        f"       Examples: 'demo-katalon', 'agentcore-agent', 'sdlc-mcp'.\n"
+        f"     - If git fails (not a repo / no git), fall back to the name\n"
+        f"       of the user's open workspace folder.\n"
+        f"     - If the user asked you to document a sub-module, use\n"
+        f"       '<repo-name>/<subpath>' (e.g. 'agentcore-agent/routers').\n"
+        f"     - If the user passed an explicit `scope` to this tool already,\n"
+        f"       trust that and skip auto-detection.\n"
+        f"\n"
+        f"  b) Commit SHA (`commit_sha`):\n"
+        f"     - From the same directory, run: git rev-parse HEAD\n"
+        f"     - Verify you got back a 40-char hex string before using it.\n"
+        f"     - If git fails or returns empty, pass \"\" — the backend will\n"
+        f"       use 'unknown' in the title.\n"
+        f"\n"
+        f"  Remember both values; you'll pass them in Step 5.\n\n"
         f"STEP 1 — EXPLORE THE CODEBASE\n"
         f"  - Read the repo structure (top-level folders and files).\n"
         f"  - Identify entry points, frameworks, and overall architecture.\n"
@@ -88,19 +116,22 @@ async def prepare_code_documentation(
         f"  - WAIT for explicit confirmation (e.g. 'yes', 'publish', 'push').\n"
         f"  - If the user wants edits, revise the document and re-show.\n"
         f"  - Do NOT call push_code_documentation yet.\n\n"
-        f"STEP 4 — PUBLISH (only after explicit user approval)\n"
-        f"  - Determine the current commit SHA by running: git rev-parse HEAD\n"
-        f"    (use your shell/Bash tool in the user's repo directory).\n"
-        f"    If git is unavailable, pass an empty string for commit_sha.\n"
-        f"  - Call push_code_documentation(\n"
-        f"        content=\"<the entire Markdown from Step 2>\",\n"
-        f"        scope=\"{scope}\",\n"
-        f"        commit_sha=\"<the SHA you just resolved>\"\n"
-        f"    )\n"
-        f"  - Show the user the returned Confluence page URL.\n\n"
+        f"STEP 4 — CONFIRM SCOPE + SHA WITH THE USER (one quick sentence)\n"
+        f"  Before publishing, briefly tell the user:\n"
+        f"    \"I'll publish this as: Code Documentation — <scope> — <sha[:8]>\"\n"
+        f"  So they catch mistakes (wrong repo detected, etc.) before the push.\n\n"
+        f"STEP 5 — PUBLISH (only after explicit user approval)\n"
+        f"  Call push_code_documentation(\n"
+        f"      content=\"<the entire Markdown from Step 2>\",\n"
+        f"      scope=\"<the scope from Step 0a>\",\n"
+        f"      commit_sha=\"<the SHA from Step 0b>\"\n"
+        f"  )\n"
+        f"  If a page with that title already exists, the backend will\n"
+        f"  auto-version it as '(v2)', '(v3)', etc. — no special handling\n"
+        f"  needed on your side. Surface the returned URL to the user.\n\n"
         f"The backend resolves the target Confluence space from project_id —\n"
-        f"you do not need to know the space key. The page will be created\n"
-        f"under the project's 'Code Documentation' parent page and labelled\n"
+        f"you do not need to know the space key. The page is created under\n"
+        f"the project's 'Code Documentation' parent page and labelled\n"
         f"'code-documentation' so the SDLC frontend can list it."
     )
 
@@ -170,13 +201,15 @@ async def push_code_documentation(
     page_url = data.get("web_url") or "(no URL returned)"
     page_id = data.get("page_id", "?")
     title = data.get("title", "?")
-    created = data.get("created", True)
+    doc_version = data.get("doc_version", 1)
 
-    status_line = (
-        "Created new Confluence page."
-        if created
-        else "A page already existed for this scope+commit — returning the existing one."
-    )
+    if doc_version > 1:
+        status_line = (
+            f"Created Confluence page as v{doc_version} — a page with the base "
+            f"title already existed, so this push was auto-versioned."
+        )
+    else:
+        status_line = "Created new Confluence page."
 
     return (
         f"{status_line}\n\n"
