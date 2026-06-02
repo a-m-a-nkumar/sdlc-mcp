@@ -126,8 +126,14 @@ def _resolve_page(state: WorkflowState, page_selection: str) -> dict | None:
 
 @asynccontextmanager
 async def lifespan(app):
-    """Create a shared httpx client that lives for the entire server lifetime."""
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    """Create a shared httpx client that lives for the entire server lifetime.
+
+    Default 240s to cover the longest legitimate backend call:
+    parse-scenarios-internal does an LLM scenario extraction that has
+    been observed at 80-110s for medium-sized Confluence pages.
+    Per-call overrides still apply for shorter / longer operations.
+    """
+    async with httpx.AsyncClient(timeout=240.0) as client:
         logger.info("Test workflow server: HTTP client created")
         yield {"client": client}
     logger.info("Test workflow server: HTTP client closed")
@@ -321,7 +327,9 @@ async def get_test_prompt(page_selection: str, ctx: Context, project_id: str = N
                 "confluence_page_id": confluence_page_id,
                 "project_id": project_id,
             },
-            timeout=60.0,
+            # Backend does an LLM extraction here that takes ~80-110s for
+            # medium pages. 60s used to silently throw away every success.
+            timeout=240.0,
         )
 
         if resp.status_code != 200:

@@ -15,8 +15,13 @@ logger = logging.getLogger("mcp.enhance-prompt")
 
 @asynccontextmanager
 async def lifespan(app):
-    """Create a shared httpx client that lives for the entire server lifetime."""
-    async with httpx.AsyncClient(timeout=60.0,verify=False) as client:
+    """Create a shared httpx client that lives for the entire server lifetime.
+
+    Default 240s because the backend does an LLM call for prompt
+    enhancement that can run 60-120s on a busy gateway. The previous 60s
+    silently dropped successful slow responses.
+    """
+    async with httpx.AsyncClient(timeout=240.0, verify=False) as client:
         logger.info("Enhance server: HTTP client created")
         yield {"client": client}
     logger.info("Enhance server: HTTP client closed")
@@ -41,7 +46,7 @@ async def _call_enhance(client: httpx.AsyncClient, api_url: str, api_key: str,
             "frontend_requirements": frontend_requirements,
             "backend_requirements": backend_requirements,
         },
-        timeout=60.0,
+        timeout=240.0,
     )
 
     if resp.status_code != 200:
@@ -68,7 +73,7 @@ async def enhance(task: str, project_id: str = None) -> str:
     logger.info("Enhancing task: %s (Project: %s)", task, project_id)
 
     try:
-        async with httpx.AsyncClient(timeout=60.0,verify=False) as client:
+        async with httpx.AsyncClient(timeout=240.0, verify=False) as client:
             result = await _call_enhance(client, api_url, api_key, project_id, task,
                                          frontend_requirements, backend_requirements)
     except Exception as e:
