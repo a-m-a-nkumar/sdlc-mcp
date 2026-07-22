@@ -259,6 +259,109 @@ async def submit_quality_review(
     )
 
 
+# ─── Tool 5: prepare_structure_scan (architecture golden-graph) ───────────────
+
+@mcp.tool()
+async def prepare_structure_scan(
+    ctx: Context,
+    scope: str = "",
+    project_id: str = None,
+) -> str:
+    """
+    STEP 1 (structure): Start an architecture-structure scan (golden-graph diff). Call
+    when the user asks about architecture, layering, module boundaries, or dependency
+    structure / circular dependencies.
+
+    Returns a workflow: run import-linter (Python) / dependency-cruiser (JS/TS), extract
+    the violations, report NEW-vs-baseline to the developer, then call
+    submit_structure_report. The FIRST scan of a project becomes the baseline; later
+    scans report only what is NEW since then.
+
+    Args:
+        scope: usually the whole repo (architecture is whole-project). project_id: env default.
+    """
+    project_id, api_url, api_key = get_config(project_id)
+    if err := validate_config(project_id, api_key):
+        return err
+    try:
+        client = get_client(ctx)
+        resp = await client.post(
+            f"{api_url}/api/quality/structure-prompt-internal",
+            headers={"X-API-Key": api_key},
+            json={"project_id": project_id, "scope": scope},
+            timeout=120.0,
+        )
+    except Exception as e:
+        logger.exception("prepare_structure_scan backend call failed")
+        return f"Error calling backend: {type(e).__name__}: {str(e)}"
+    if resp.status_code != 200:
+        return f"Error: Backend returned {resp.status_code} — {resp.text[:500]}"
+    return resp.json().get("prompt", "Error: backend returned no prompt.")
+
+
+# ─── Tool 6: submit_structure_report ──────────────────────────────────────────
+
+@mcp.tool()
+async def submit_structure_report(
+    ctx: Context,
+    violations_json: str = "[]",
+    circular_json: str = "[]",
+    tool: str = "",
+    scope: str = "",
+    commit_sha: str = "",
+    language: str = "",
+    files_analyzed: list = None,
+    unavailable_tools: list = None,
+    project_id: str = None,
+) -> str:
+    """
+    STEP 2 (structure): Submit the normalized violations you extracted from the tool.
+
+    violations_json is a JSON array of {rule, from_module, to_module, file}; circular_json
+    the same shape for circular dependencies. The backend diffs against the project's
+    baseline (the first scan IS the baseline and reports new_violations = 0). If the tool
+    could not run, do NOT submit — an empty submission would look like a clean baseline.
+
+    Args:
+        violations_json, circular_json: JSON-array strings.
+        tool, scope, commit_sha, language, files_analyzed, unavailable_tools, project_id.
+    """
+    project_id, api_url, api_key = get_config(project_id)
+    if err := validate_config(project_id, api_key):
+        return err
+    try:
+        client = get_client(ctx)
+        resp = await client.post(
+            f"{api_url}/api/quality/structure-report-internal",
+            headers={"X-API-Key": api_key},
+            json={
+                "project_id": project_id, "scope": scope, "commit_sha": commit_sha,
+                "language": language, "tool": tool,
+                "violations_json": violations_json or "[]", "circular_json": circular_json or "[]",
+                "files_analyzed": files_analyzed or [], "unavailable_tools": unavailable_tools or [],
+            },
+            timeout=120.0,
+        )
+    except Exception as e:
+        logger.exception("submit_structure_report backend call failed")
+        return f"Error calling backend: {type(e).__name__}: {str(e)}"
+    if resp.status_code != 200:
+        return f"Error: Backend returned {resp.status_code} — {resp.text[:500]}"
+    data = resp.json()
+    new_v = data.get("new_violations")
+    if data.get("is_baseline"):
+        headline = "Baseline established (first structure scan) — 0 new violations by definition."
+    else:
+        headline = f"{new_v} NEW architecture violation(s) since the baseline."
+    return (
+        f"Structure scan recorded for project {project_id}.\n"
+        f"- {headline}\n"
+        f"- Attributed to project owner: {'yes' if data.get('attributed') else 'no (unattributed)'}\n\n"
+        f"The golden-graph diff surfaces only what changed since the baseline, so pre-existing "
+        f"debt doesn't drown out new drift. (Structure fabrication-resistance is partial.)"
+    )
+
+
 # ─── Entrypoint ────────────────────────────────────────────────────────────────
 
 def main():
