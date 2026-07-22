@@ -1,6 +1,6 @@
 # brd-enhancer-mcp
 
-A package that ships six MCP servers for an AI-assisted SDLC workflow. Each is a
+A package that ships seven MCP servers for an AI-assisted SDLC workflow. Each is a
 separate executable you can register on its own in your IDE's MCP config:
 
 | Server | Executable | Purpose |
@@ -11,6 +11,7 @@ separate executable you can register on its own in your IDE's MCP config:
 | code-documentation | `code-documentation-mcp` | Generate Markdown code documentation and publish it to Confluence |
 | unit-test | `unit-test-mcp` | Generate unit tests, run them with coverage, and report coverage KPIs |
 | code-quality | `code-quality-mcp` | Measure code complexity + lint/quality (whole-repo or changed files) |
+| security | `security-mcp` | Scan SAST (semgrep) + dependency CVEs (trivy) + secrets (gitleaks); finding-led |
 
 ---
 
