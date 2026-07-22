@@ -10,7 +10,7 @@ separate executable you can register on its own in your IDE's MCP config:
 | pipeline-analyzer | `pipeline-analyzer-mcp` | Analyze Harness pipeline failures with RAG context from past incidents |
 | code-documentation | `code-documentation-mcp` | Generate Markdown code documentation and publish it to Confluence |
 | unit-test | `unit-test-mcp` | Generate unit tests, run them with coverage, and report coverage KPIs |
-| code-quality | `code-quality-mcp` | Measure code complexity + lint/quality (whole-repo or changed files) |
+| code-quality | `code-quality-mcp` | Measure code complexity + lint/quality (whole-repo or changed files) + a Copilot-as-judge review |
 | security | `security-mcp` | Scan SAST (semgrep) + dependency CVEs (trivy) + secrets (gitleaks); finding-led |
 
 ---
