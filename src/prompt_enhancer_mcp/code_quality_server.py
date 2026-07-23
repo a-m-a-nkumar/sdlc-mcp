@@ -173,14 +173,17 @@ async def prepare_quality_review(
     project_id: str = None,
 ) -> str:
     """
-    STEP 1 (review): Start a Copilot-as-judge code review of the code just written.
-    Call this when the user asks for a qualitative review, a code critique, or "how
-    good is this code" against the project's standards.
+    STEP 1 (review): Start an AI-as-judge code review of the code just written — YOU
+    (the IDE agent: Claude Code, GitHub Copilot, Cursor, ...) are the judge. Call this
+    when the user asks for a qualitative review, a code critique, or "how good is this
+    code" against the project's standards.
 
-    Returns a rubric prompt (five dimensions) with THIS project's own standards
-    injected by the backend. YOU do the judging (free — no backend LLM): produce the
-    JSON, show the developer a short summary, then call submit_quality_review with
-    the JSON. This is a SELF-REPORTED review (AI grading AI) and is labelled as such.
+    Returns a rubric prompt (SEVEN dimensions, one per family so each pairs with its
+    tool metric) with THIS project's own standards injected by the backend. YOU do the
+    judging (free — no backend LLM): produce the JSON, show the developer a short
+    summary, then call submit_quality_review with the JSON and your judge_model. This
+    is a SELF-REPORTED review (AI grading AI), labelled as such and never averaged with
+    the tool scores.
 
     Args:
         scope: What was reviewed. project_id: defaults to PROJECT_ID env var.
@@ -211,6 +214,7 @@ async def prepare_quality_review(
 async def submit_quality_review(
     review_json: str,
     ctx: Context,
+    judge_model: str = "",
     scope: str = "",
     commit_sha: str = "",
     project_id: str = None,
@@ -219,11 +223,14 @@ async def submit_quality_review(
     STEP 2 (review): Submit the rubric JSON you produced from prepare_quality_review.
 
     review_json MUST be the exact JSON schema from the rubric prompt (score_total +
-    a per-dimension breakdown). It is stored as a self-reported Copilot-judge score,
-    kept separate from the tool-based scores (never averaged with them).
+    a per-dimension breakdown). It is stored as a self-reported AI-judge score, kept
+    separate from the tool-based scores (never averaged with them).
 
     Args:
         review_json: the rubric JSON, as a string.
+        judge_model: YOUR model identity as the judge (e.g. "claude-code",
+                     "github-copilot", "cursor") — so the dashboard shows which AI
+                     reviewed, not a hardcoded label.
         scope, commit_sha, project_id.
     """
     project_id, api_url, api_key = get_config(project_id)
@@ -237,7 +244,7 @@ async def submit_quality_review(
             f"{api_url}/api/quality/llm-review-internal",
             headers={"X-API-Key": api_key},
             json={"project_id": project_id, "scope": scope, "commit_sha": commit_sha,
-                  "review_json": review_json},
+                  "review_json": review_json, "judge_model": judge_model},
             timeout=120.0,
         )
     except Exception as e:
