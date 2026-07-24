@@ -34,16 +34,20 @@ async def prepare_quality_scan(
     project_id: str = None,
 ) -> str:
     """
-    STEP 1: Start the code-quality scan (complexity + lint/quality). Call this
-    when the user asks to check code quality, complexity, maintainability, or to
-    review the code they just wrote against standards.
+    Run the COMPLETE code-quality suite. Call this whenever the user asks to check
+    code quality, complexity, maintainability, architecture/structure, or to review
+    the code they just wrote — this ONE tool runs everything; there is no separate
+    review or structure tool to call.
 
-    The returned MANDATORY workflow first RESOLVES SCOPE with the developer
-    (whole repo vs the files they just changed — discovered via `git diff` and
-    confirmed by the developer, never hand-listed), then runs lizard / jscpd /
-    radon / the language linter, REPORTS the findings to the developer in chat,
-    and finally calls submit_quality_metrics. Everything runs in the developer's
-    environment — the backend only parses and scores what you submit.
+    The returned MANDATORY workflow runs an AUTOMATIC CHAIN in the developer's own
+    environment: it RESOLVES SCOPE (whole repo vs the files they just changed —
+    discovered via `git diff`, confirmed by the developer, never hand-listed), then
+    runs complexity + lint + duplication (lizard / jscpd / radon / the language
+    linter) + STRUCTURE (import-linter / dependency-cruiser) + an AI-as-judge REVIEW
+    (you score the code against the project's own standards), printing a descriptive
+    read-out of each tool as it goes, and finally AUTO-SUBMITS everything via
+    submit_quality_metrics + submit_structure_report + submit_quality_review (no
+    permission prompt). The backend only parses and scores what you submit.
 
     Args:
         scan_mode: Optional override — "changed" or "whole_repo". If empty, the
@@ -164,51 +168,7 @@ async def submit_quality_metrics(
     )
 
 
-# ─── Tool 3: prepare_quality_review (Copilot-as-judge) ────────────────────────
-
-@mcp.tool()
-async def prepare_quality_review(
-    ctx: Context,
-    scope: str = "",
-    project_id: str = None,
-) -> str:
-    """
-    STEP 1 (review): Start an AI-as-judge code review of the code just written — YOU
-    (the IDE agent: Claude Code, GitHub Copilot, Cursor, ...) are the judge. Call this
-    when the user asks for a qualitative review, a code critique, or "how good is this
-    code" against the project's standards.
-
-    Returns a rubric prompt (SEVEN dimensions, one per family so each pairs with its
-    tool metric) with THIS project's own standards injected by the backend. YOU do the
-    judging (free — no backend LLM): produce the JSON, show the developer a short
-    summary, then call submit_quality_review with the JSON and your judge_model. This
-    is a SELF-REPORTED review (AI grading AI), labelled as such and never averaged with
-    the tool scores.
-
-    Args:
-        scope: What was reviewed. project_id: defaults to PROJECT_ID env var.
-    """
-    project_id, api_url, api_key = get_config(project_id)
-    if err := validate_config(project_id, api_key):
-        return err
-    try:
-        client = get_client(ctx)
-        resp = await client.post(
-            f"{api_url}/api/quality/llm-review-prompt-internal",
-            headers={"X-API-Key": api_key},
-            json={"project_id": project_id, "scope": scope},
-            timeout=120.0,
-        )
-    except Exception as e:
-        logger.exception("prepare_quality_review backend call failed")
-        return f"Error calling backend: {type(e).__name__}: {str(e)}"
-    if resp.status_code != 200:
-        logger.error("Backend returned %d — %s", resp.status_code, resp.text[:500])
-        return f"Error: Backend returned {resp.status_code} — {resp.text[:500]}"
-    return resp.json().get("prompt", "Error: backend returned no prompt.")
-
-
-# ─── Tool 4: submit_quality_review ────────────────────────────────────────────
+# ─── Tool 3: submit_quality_review (AI-as-judge — called by the chain) ─────────
 
 @mcp.tool()
 async def submit_quality_review(
@@ -220,11 +180,14 @@ async def submit_quality_review(
     project_id: str = None,
 ) -> str:
     """
-    STEP 2 (review): Submit the rubric JSON you produced from prepare_quality_review.
+    Submit the AI-as-judge rubric JSON. The prepare_quality_scan workflow tells YOU
+    (the IDE agent) to produce this rubric and call this tool automatically at the end
+    of the chain — there is no separate prepare step to call first.
 
-    review_json MUST be the exact JSON schema from the rubric prompt (score_total +
-    a per-dimension breakdown). It is stored as a self-reported AI-judge score, kept
-    separate from the tool-based scores (never averaged with them).
+    review_json MUST be the JSON schema described in the workflow (score_total + a
+    per-dimension breakdown; leave dimensions this server doesn't own as null). It is
+    stored as a self-reported AI-judge score, kept separate from the tool-based scores
+    (never averaged with them).
 
     Args:
         review_json: the rubric JSON, as a string.
@@ -266,47 +229,7 @@ async def submit_quality_review(
     )
 
 
-# ─── Tool 5: prepare_structure_scan (architecture golden-graph) ───────────────
-
-@mcp.tool()
-async def prepare_structure_scan(
-    ctx: Context,
-    scope: str = "",
-    project_id: str = None,
-) -> str:
-    """
-    STEP 1 (structure): Start an architecture-structure scan (golden-graph diff). Call
-    when the user asks about architecture, layering, module boundaries, or dependency
-    structure / circular dependencies.
-
-    Returns a workflow: run import-linter (Python) / dependency-cruiser (JS/TS), extract
-    the violations, report NEW-vs-baseline to the developer, then call
-    submit_structure_report. The FIRST scan of a project becomes the baseline; later
-    scans report only what is NEW since then.
-
-    Args:
-        scope: usually the whole repo (architecture is whole-project). project_id: env default.
-    """
-    project_id, api_url, api_key = get_config(project_id)
-    if err := validate_config(project_id, api_key):
-        return err
-    try:
-        client = get_client(ctx)
-        resp = await client.post(
-            f"{api_url}/api/quality/structure-prompt-internal",
-            headers={"X-API-Key": api_key},
-            json={"project_id": project_id, "scope": scope},
-            timeout=120.0,
-        )
-    except Exception as e:
-        logger.exception("prepare_structure_scan backend call failed")
-        return f"Error calling backend: {type(e).__name__}: {str(e)}"
-    if resp.status_code != 200:
-        return f"Error: Backend returned {resp.status_code} — {resp.text[:500]}"
-    return resp.json().get("prompt", "Error: backend returned no prompt.")
-
-
-# ─── Tool 6: submit_structure_report ──────────────────────────────────────────
+# ─── Tool 4: submit_structure_report (called by the chain) ────────────────────
 
 @mcp.tool()
 async def submit_structure_report(
@@ -322,7 +245,9 @@ async def submit_structure_report(
     project_id: str = None,
 ) -> str:
     """
-    STEP 2 (structure): Submit the normalized violations you extracted from the tool.
+    Submit the normalized architecture violations. The prepare_quality_scan workflow
+    runs the structure tool (import-linter / dependency-cruiser) as part of its chain
+    and calls this tool automatically — there is no separate prepare step to call first.
 
     violations_json is a JSON array of {rule, from_module, to_module, file}; circular_json
     the same shape for circular dependencies. The backend diffs against the project's

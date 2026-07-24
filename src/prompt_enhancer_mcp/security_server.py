@@ -33,16 +33,18 @@ async def prepare_security_scan(
     project_id: str = None,
 ) -> str:
     """
-    STEP 1: Start the security scan (SAST + dependency CVEs + secrets). Call this
-    when the user asks to check security, find vulnerabilities, scan for secrets,
-    or review the code they just wrote for security issues.
+    Run the COMPLETE security suite. Call this whenever the user asks to check
+    security, find vulnerabilities, scan for secrets, or review the code they just
+    wrote for security issues — this ONE tool runs everything.
 
-    Returns a MANDATORY workflow: install/run semgrep (SAST), trivy (dependency
-    CVEs) and gitleaks (secrets) in the developer's environment, REPORT each
-    finding to the developer in chat (secrets shown as type + location + [redacted]
-    only), then call submit_security_findings with the RAW reports. The backend
-    parses, redacts secrets on ingest, and scores — it never sees a raw secret it
-    is supposed to store.
+    The returned MANDATORY workflow runs an AUTOMATIC CHAIN in the developer's own
+    environment: install/run semgrep (SAST), trivy (dependency CVEs) and gitleaks
+    (secrets), plus an AI-as-judge REVIEW (you score security_posture as a soft
+    second opinion, deferring to the scanners), printing a descriptive read-out of
+    each scanner as it goes (secrets shown as type + location + [redacted] only),
+    then AUTO-SUBMITS everything via submit_security_findings + submit_quality_review
+    (no permission prompt). The backend parses, redacts secrets on ingest, and
+    scores — it never sees a raw secret it is supposed to store.
 
     Args:
         scope: What to scan. Dependency + secret scans are whole-project by nature.
@@ -160,6 +162,69 @@ async def submit_security_findings(
         f"Secrets were redacted on ingest (type + location only). NOTE: SCA has no "
         f"reachability and SAST/secrets are potential issues needing human triage — "
         f"and a well-formed report is a format check, not proof the scan ran."
+    )
+
+
+# ─── Tool 3: submit_quality_review (AI-as-judge — called by the chain) ─────────
+
+@mcp.tool()
+async def submit_quality_review(
+    review_json: str,
+    ctx: Context,
+    judge_model: str = "",
+    scope: str = "",
+    commit_sha: str = "",
+    project_id: str = None,
+) -> str:
+    """
+    Submit the AI-as-judge rubric JSON. The prepare_security_scan workflow tells YOU
+    (the IDE agent) to score security_posture against the project's standards and call
+    this tool automatically at the end of the chain — there is no separate prepare step
+    to call first.
+
+    review_json MUST be the JSON schema described in the workflow (score_total + a
+    per-dimension breakdown; leave dimensions this server doesn't own as null). It is
+    stored as a self-reported AI-judge score, kept separate from the scanner findings
+    (never averaged with them) — it is a soft second opinion, not a scanner result.
+
+    Args:
+        review_json: the rubric JSON, as a string.
+        judge_model: YOUR model identity as the judge (e.g. "claude-code",
+                     "github-copilot", "cursor") — so the dashboard shows which AI
+                     reviewed, not a hardcoded label.
+        scope, commit_sha, project_id.
+    """
+    project_id, api_url, api_key = get_config(project_id)
+    if err := validate_config(project_id, api_key):
+        return err
+    if not (review_json or "").strip():
+        return "Error: review_json is empty. Produce the rubric JSON first, then submit it."
+    try:
+        client = get_client(ctx)
+        resp = await client.post(
+            f"{api_url}/api/quality/llm-review-internal",
+            headers={"X-API-Key": api_key},
+            json={"project_id": project_id, "scope": scope, "commit_sha": commit_sha,
+                  "review_json": review_json, "judge_model": judge_model},
+            timeout=120.0,
+        )
+    except Exception as e:
+        logger.exception("submit_quality_review backend call failed")
+        return f"Error calling backend: {type(e).__name__}: {str(e)}"
+    if resp.status_code != 200:
+        logger.error("Backend returned %d — %s", resp.status_code, resp.text[:500])
+        return f"Error: Backend returned {resp.status_code} — {resp.text[:500]}"
+    data = resp.json()
+    sc = data.get("llm_score")
+    sc_txt = f"{sc}/100" if sc is not None else "not scored"
+    attributed = data.get("attributed")
+    return (
+        f"AI security review recorded for project {project_id}.\n"
+        f"- security_posture (self-reported): {sc_txt}\n"
+        f"- Attributed to project owner: {'yes' if attributed else 'no (unattributed)'}\n\n"
+        f"This is a SOFT second opinion (AI grading AI) — the dashboard labels it "
+        f"self-reported and keeps it separate from the scanner findings, which are "
+        f"the authoritative security signal."
     )
 
 

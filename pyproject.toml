@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "prompt-enhancer-mcp"
-version = "0.10.0"
+version = "0.11.0"
 description = "MCP servers for prompt enhancement, test workflows, pipeline failure analysis, code documentation, unit-test coverage, code quality, and security scanning"
 readme = "README.md"
 requires-python = ">=3.10"
