@@ -21,7 +21,20 @@ async def lifespan(app):
     logger.info("Unit-test server: HTTP client closed")
 
 
-mcp = FastMCP("unit-test", lifespan=lifespan)
+mcp = FastMCP(
+    "unit-test",
+    lifespan=lifespan,
+    instructions=(
+        "UNIT tests for code in the CURRENT repository — author + run unit tests with "
+        "coverage and mutation for functions/classes the developer just wrote.\n"
+        "AMBIGUITY GUARD: the words 'test cases'/'tests' ALSO match the separate "
+        "'test-workflow' server (end-to-end / acceptance test cases as Gherkin from a "
+        "BRD/Confluence test-scenario page). If the user's request does NOT clearly say "
+        "which one they want, do NOT call any tool yet — first ASK them in the chat: "
+        "'Unit tests for your code, or end-to-end test cases from a test-scenario page?' "
+        "and WAIT for their choice, then call the matching tool."
+    ),
+)
 
 
 # ─── Tool 1: prepare_unit_tests ───────────────────────────────────────────────
@@ -33,10 +46,15 @@ async def prepare_unit_tests(
     project_id: str = None,
 ) -> str:
     """
-    Run the COMPLETE unit-test suite. Call this whenever the user asks to generate
-    unit tests, add tests, measure coverage, run mutation testing, or check how well
-    the code they just wrote is tested — this ONE tool runs everything; there is no
-    separate mutation tool to call.
+    Run the COMPLETE UNIT-test suite for code in THIS repository. Call this when the
+    user asks to generate UNIT tests, add tests for code they just wrote, measure
+    coverage, run mutation testing, or check how well their code is tested — this ONE
+    tool runs everything; there is no separate mutation tool to call.
+
+    AMBIGUITY GUARD: if the user only says "generate test cases"/"tests" without making
+    clear they mean UNIT tests (vs end-to-end Gherkin test cases from a BRD/Confluence
+    test-scenario page — handled by the 'test-workflow' server), do NOT run this yet —
+    first ASK them in chat which they want and WAIT for their answer.
 
     The returned MANDATORY workflow runs an AUTOMATIC CHAIN in the developer's own
     environment: detect the language, author meaningful tests, run them WITH coverage,
@@ -294,6 +312,12 @@ async def submit_quality_review(
 # ─── Entrypoint ────────────────────────────────────────────────────────────────
 
 def main():
+    try:
+        from .config import fire_install_beacon
+        from . import __version__ as _v
+        fire_install_beacon("unit-test", _v)
+    except Exception:
+        pass
     mcp.run()
 
 

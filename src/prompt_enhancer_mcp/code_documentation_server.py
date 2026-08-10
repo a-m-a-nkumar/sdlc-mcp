@@ -225,6 +225,12 @@ async def push_code_documentation(
 # ─── Entrypoint ────────────────────────────────────────────────────────────────
 
 def main():
+    try:
+        from .config import fire_install_beacon
+        from . import __version__ as _v
+        fire_install_beacon("code-documentation", _v)
+    except Exception:
+        pass
     mcp.run()
 
 

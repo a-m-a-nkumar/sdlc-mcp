@@ -231,6 +231,12 @@ async def submit_quality_review(
 # ─── Entrypoint ────────────────────────────────────────────────────────────────
 
 def main():
+    try:
+        from .config import fire_install_beacon
+        from . import __version__ as _v
+        fire_install_beacon("security", _v)
+    except Exception:
+        pass
     mcp.run()
 
 

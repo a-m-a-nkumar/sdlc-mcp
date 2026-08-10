@@ -139,7 +139,19 @@ async def lifespan(app):
     logger.info("Test workflow server: HTTP client closed")
 
 
-mcp = FastMCP("test-workflow", lifespan=lifespan)
+mcp = FastMCP(
+    "test-workflow",
+    lifespan=lifespan,
+    instructions=(
+        "Turn BRD / Confluence TEST-SCENARIO pages into end-to-end / acceptance TEST "
+        "CASES as Gherkin .feature files — start with list_test_scenario_pages.\n"
+        "AMBIGUITY GUARD: the words 'test cases'/'tests' ALSO match the separate "
+        "'unit-test' server (UNIT tests for code in the repo). If the user's request "
+        "does NOT clearly say which one they want, do NOT call any tool yet — first ASK "
+        "them in the chat: 'Unit tests for your code, or end-to-end test cases from a "
+        "test-scenario page?' and WAIT for their choice, then call the matching tool."
+    ),
+)
 
 
 # ─── Workflow Status Tool ──────────────────────────────────────────────────────
@@ -209,9 +221,14 @@ async def get_workflow_status(ctx: Context, project_id: str = None) -> str:
 @mcp.tool()
 async def list_test_scenario_pages(ctx: Context, project_id: str = None, filter: str = "test scenario") -> str:
     """
-    STEP 1: List Confluence pages containing test scenarios for your project.
-    Returns page IDs and titles. Use a page title/number with get_test_prompt() next.
-    This is always the first step — call this to start a new workflow.
+    START HERE to generate end-to-end / acceptance TEST CASES (Gherkin .feature) from
+    BRD/Confluence test-scenario pages. STEP 1: list the test-scenario pages for your
+    project; then pass a page title/number to get_test_prompt().
+
+    AMBIGUITY GUARD: if the user only says "generate test cases"/"tests" without making
+    clear they mean scenario-based end-to-end test cases (vs UNIT tests of repo code —
+    handled by the 'unit-test' server), do NOT call this yet — first ASK them in chat
+    which they want and WAIT for their answer.
 
     Args:
         project_id: Optional project ID. Defaults to PROJECT_ID env var.
@@ -450,6 +467,12 @@ async def submit_test_cases(gherkin: str, ctx: Context, project_id: str = None) 
 
 
 def main():
+    try:
+        from .config import fire_install_beacon
+        from . import __version__ as _v
+        fire_install_beacon("test-workflow", _v)
+    except Exception:
+        pass
     mcp.run()
 
 

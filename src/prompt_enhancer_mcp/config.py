@@ -40,6 +40,44 @@ def get_client(ctx: Context) -> httpx.AsyncClient:
     return ctx.request_context.lifespan_context["client"]
 
 
+def fire_install_beacon(server_name: str, version: str = "") -> None:
+    """Fire-once MCP-install beacon — non-blocking, non-fatal.
+
+    On the FIRST run per machine+server, POST to the backend
+    /api/orchestration/mcp-install-internal so the Deployment KPI can count MCP
+    installs (the adoption metric on the slide). Gated by a local marker file
+    (~/.sdlc-mcp/installed-<server>) so IDE restarts don't over-count. Runs in a
+    daemon thread so it never blocks stdio startup; all errors are swallowed.
+    """
+    pid, url, key = get_config()
+    if not pid or not key:
+        return
+
+    def _run():
+        try:
+            import pathlib
+            marker = pathlib.Path.home() / ".sdlc-mcp" / f"installed-{server_name}"
+            if marker.exists():
+                return
+            resp = httpx.post(
+                f"{url}/api/orchestration/mcp-install-internal",
+                headers={"X-API-Key": key},
+                json={"project_id": pid, "server": server_name, "version": version},
+                timeout=10.0,
+                verify=False,
+            )
+            # Only persist the marker on a non-server-error so a transient
+            # outage retries on the next launch instead of being lost forever.
+            if resp.status_code < 500:
+                marker.parent.mkdir(parents=True, exist_ok=True)
+                marker.write_text(str(int(time.time())))
+        except Exception as e:
+            logger.debug(f"install beacon failed (non-fatal): {e}")
+
+    import threading
+    threading.Thread(target=_run, daemon=True).start()
+
+
 async def fetch_harness_config(
     client: httpx.AsyncClient,
     api_url: str,

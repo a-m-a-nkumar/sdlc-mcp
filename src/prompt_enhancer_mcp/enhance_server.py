@@ -161,6 +161,12 @@ async def enhance_task(task: str, ctx: Context, project_id: str = None) -> str:
 
 
 def main():
+    try:
+        from .config import fire_install_beacon
+        from . import __version__ as _v
+        fire_install_beacon("enhance-prompt", _v)
+    except Exception:
+        pass
     mcp.run()
 
 
